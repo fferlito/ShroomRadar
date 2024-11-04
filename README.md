@@ -18,6 +18,7 @@
 
 - *Elevation data (NASA SRTM V3 product)* : `append_elevation.ipynb`
 - *Corine map*: `LC.ipynb` 
+- *Soilgrid map*: soilgrid.ipynb
 
 ## Training code
 
