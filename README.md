@@ -12,6 +12,11 @@
 
 - `grid.ipynb` contains the code to generate a gridded geojson. 
 
+<img src="assets/map.png" alt="drawing" width="200"/>
+
+<img src="assets/grid.png" alt="drawing" width="200"/>
+
+
 ### Climate data
 
 - `get_climate_data.ipynb` contains the code necessary to download the climate data relative to the mushroom data obtained in the previous section
