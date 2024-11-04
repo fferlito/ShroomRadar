@@ -12,7 +12,7 @@
 
 - `grid.ipynb` contains the code to generate a gridded geojson. 
 
-Solarized dark             |  Solarized Ocean
+Input geometries             |  Output
 :-------------------------:|:-------------------------:
 <img src="assets/map.png" alt="drawing" width="200"/>  |  <img src="assets/grid.png" alt="drawing" width="200"/>
 
