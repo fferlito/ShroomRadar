@@ -12,9 +12,10 @@
 
 - `grid.ipynb` contains the code to generate a gridded geojson. 
 
-<img src="assets/map.png" alt="drawing" width="200"/>
+Solarized dark             |  Solarized Ocean
+:-------------------------:|:-------------------------:
+<img src="assets/map.png" alt="drawing" width="200"/>  |  <img src="assets/grid.png" alt="drawing" width="200"/>
 
-<img src="assets/grid.png" alt="drawing" width="200"/>
 
 
 ### Climate data
