@@ -1,4 +1,4 @@
-# ShroomRadar
+# 🍄🌎 ShroomRadar
 
 
 ## Dataset
