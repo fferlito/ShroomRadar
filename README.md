@@ -10,6 +10,7 @@
 
 ### Climate data
 
+- `get_climate_data.ipynb` contains the code necessary to download the climate data relative to the mushroom data obtained in the previous section
 - `append_climate_data.ipynb`: code to append the climate data to the geometry geojson
 
 ### Environmental data
