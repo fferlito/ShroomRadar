@@ -12,7 +12,7 @@
 
 - `grid.ipynb` contains the code to generate a gridded geojson. 
 
-Input geometries             |  Output
+Input geometries (spain-provinces.geojson)   |  Output (spain_grid_3km.geojson)
 :-------------------------:|:-------------------------:
 <img src="assets/map.png" alt="drawing" width="200"/>  |  <img src="assets/grid.png" alt="drawing" width="200"/>
 
