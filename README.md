@@ -24,6 +24,23 @@
 - *GradientBoostingClassifier*: code to train the model is in `train_model.ipynb`
 
 
+## Metrics
+
+| **Parameter/Metric**      | **Value**                          |
+|---------------------------|------------------------------------|
+| **Best Parameters**       | `learning_rate`: 0.1, `max_depth`: 5, `n_estimators`: 100 |
+| **Overall Accuracy**      | 87.34% (0.873)                    |
+
+| **Class**                   | **Precision** | **Recall** | **F1-Score** | **Support** |
+|-----------------------------|---------------|------------|--------------|-------------|
+| *Boletus edulis* (Positive) | 0.93          | 0.77       | 0.84         | 35          |
+| *None* (Negative)           | 0.84          | 0.95       | 0.89         | 44          |
+
+| **Average Metrics**         | **Precision** | **Recall** | **F1-Score** | **Support** |
+|-----------------------------|---------------|------------|--------------|-------------|
+| **Macro Average**           | 0.89          | 0.86       | 0.87         | 79          |
+| **Weighted Average**        | 0.88          | 0.87       | 0.87         | 79          |
+
 ## Inference
 
 In order to get new predictions out of the model, we need to fetch the climate and environment data for the region of interest. The repository contains code to generate a heatmap that shows the probability distribution for a specific day, using as input a gridded geometry.
