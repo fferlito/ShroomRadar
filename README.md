@@ -11,8 +11,9 @@
 ### Environmental data
 
 - *Elevation data (NASA SRTM V3 product)* : `append_elevation.ipynb`
+- *Corine map*: `LC.ipynb` 
 
 
-### Training code
+## Training code
 
 - *GradientBoostingClassifier*: code to train the model is in `train_model.ipynb`
