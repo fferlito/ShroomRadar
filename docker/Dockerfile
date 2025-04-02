@@ -1,7 +1,7 @@
 # Use official Python image as a base
 FROM python:3.9
 
-# Install system dependencies including curl and unzip
+# Install system dependencies including curl, unzip, and fuse
 RUN apt-get update && apt-get install -y \
     curl unzip fuse \
     && rm -rf /var/lib/apt/lists/*
@@ -23,11 +23,12 @@ COPY rclone.conf /root/.config/rclone/rclone.conf
 # Set the working directory inside the container
 WORKDIR /app
 
-# Copy your Python scripts and any other required files into the container
-COPY . /app
+# Copy your Python script and any other required files into the container
+COPY . /app/
 
-# Install Python dependencies (if you have a requirements.txt)
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (if needed)
+COPY requirements.txt /app/ 
+RUN pip install --no-cache-dir -r requirements.txt || echo "No requirements.txt found"
 
-# Set the entrypoint (if needed)
-ENTRYPOINT ["rclone"]
+# Run the script automatically when the container starts
+CMD ["python", "main.py"]
