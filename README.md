@@ -62,7 +62,7 @@ To set up the project locally, clone the repository and install the required dep
 ```bash
 git clone https://github.com/fferlito/ShroomRadar.git
 cd ShroomRadar
-pip install -r requirements.txt
+pip install -r docker/requirements.txt
 ```
 
 For the production pipeline, Docker, a GCP account and access to Ellipsis drive is required. Please refer to the documentation in the `docker/` directory for detailed setup instructions.

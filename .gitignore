@@ -167,3 +167,4 @@ docker/data/*
 docker/rclone.*
 docker/rclone.conf
 docker/ellipsis.py
+.vscode
