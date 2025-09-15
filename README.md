@@ -2,8 +2,6 @@
 
 [![License: CC BY-NC-ND 4.0](https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-nd/4.0/)
 
-## Abstract
-
 ShroomRadar is a machine learning project dedicated to predicting the probability of mushroom species presence based on a variety of environmental factors. The core of this project is a `GradientBoostingClassifier` model trained on publicly available geospatial and climate data. The system is designed to generate daily probability maps for user-defined areas of interest, providing a valuable tool for ecological monitoring and mycology enthusiasts. The repository includes the complete data science workflow—from data acquisition and preprocessing to model training—as well as a containerized production pipeline for automated daily inference.
 
 ## Table of Contents
@@ -62,12 +60,12 @@ ShroomRadar/
 To set up the project locally, clone the repository and install the required dependencies.
 
 ```bash
-git clone https://github.com/your-username/ShroomRadar.git
+git clone https://github.com/fferlito/ShroomRadar.git
 cd ShroomRadar
 pip install -r requirements.txt
 ```
 
-For the production pipeline, Docker and Docker Compose are required. Please refer to the documentation in the `docker/` directory for detailed setup instructions.
+For the production pipeline, Docker, a GCP account and access to Ellipsis drive is required. Please refer to the documentation in the `docker/` directory for detailed setup instructions.
 
 ## Usage Workflow
 
