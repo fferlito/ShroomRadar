@@ -6,7 +6,8 @@ from icecream import ic
 
 def get_date_strings():
     today = datetime.today()
-    date_strings = [(today - timedelta(days=i)).strftime("%Y%j") for i in range(15)]
+    # Start from yesterday (skip today) and get 14 days
+    date_strings = [(today - timedelta(days=i+1)).strftime("%Y%j") for i in range(15)]
     return date_strings
 
 def write_structure_to_file(file_path):
