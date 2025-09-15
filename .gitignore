@@ -165,3 +165,5 @@ climate_data/*
 data/*
 docker/data/*
 docker\rclone.conf
+docker/rclone.conf
+.gitignore
