@@ -5,15 +5,14 @@ from append_data import generate_input_model
 from icecream import ic
 import fire
 
+
 def run_pipeline():
-    
-    # define vars basque_country_05_with_elevation_aspect
-    """
+      """
     path_input_geojson = 'data/base_maps/siena_05_with_elevation_aspect_LC.geojson'
     path_geojson_with_climate = 'data/base_maps/siena_with_climate.geojson'
     path_output_geojson = 'data/outputs/map_siena.geojson'
     path_filtered_geojson = 'data/outputs/siena_readyclean.geojson'
-"""
+    """
     path_input_geojson = 'data/base_maps/basque_country_05_with_elevation_aspect.geojson'
     path_geojson_with_climate = 'data/base_maps/BC_with_climate.geojson'
     path_output_geojson = 'data/outputs/map_BC.geojson'
@@ -32,7 +31,6 @@ def run_pipeline():
     generarate_predictions(path_geojson_with_climate, path_output_geojson)
     filter_predictions(path_output_geojson, path_filtered_geojson, threshold=0.0008)
     
-
     # upload geojson
     ## TODO: add multiple geojsons
     refresh_timestamps(path_output_geojson)
@@ -42,3 +40,5 @@ def run_pipeline():
 
 if __name__ == '__main__':
   fire.Fire(run_pipeline)
+
+

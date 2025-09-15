@@ -1,63 +1,118 @@
-# 🍄 ShroomRadar 🌎
+# 🍄 ShroomRadar: A Machine Learning Framework for Predicting Mushroom Occurrences
 
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-## Dataset
+## Abstract
 
-### Mushroom data 🍄
+ShroomRadar is a machine learning project dedicated to predicting the probability of mushroom species presence based on a variety of environmental factors. The core of this project is a `GradientBoostingClassifier` model trained on publicly available geospatial and climate data. The system is designed to generate daily probability maps for user-defined areas of interest, providing a valuable tool for ecological monitoring and mycology enthusiasts. The repository includes the complete data science workflow—from data acquisition and preprocessing to model training—as well as a containerized production pipeline for automated daily inference.
 
-- *Mushrooms location and timestamps*: use the `fetch_mush_data.ipynb` notebook to download a csv with the location and timestamp of a mushroom species, using the iNaturalist api. 
-- *Negative samples and timestamps*: use the `make_negative.ipynb` notebook to generate a csv with random locations and times, to be used as negative classes for the training
+## Table of Contents
 
+- [Project Overview](#project-overview)
+  - [Data Sources](#data-sources)
+  - [Methodology](#methodology)
+- [Repository Structure](#repository-structure)
+- [Installation](#installation)
+- [Usage Workflow](#usage-workflow)
+  - [1. Data Preparation and Model Training](#1-data-preparation-and-model-training)
+  - [2. Inference Pipeline](#2-inference-pipeline)
+- [Outputs](#outputs)
 
-### Climate data 🌧️
+## Project Overview
 
-- `get_climate_data.ipynb` contains the code necessary to download the climate data relative to the mushroom data obtained in the previous section
-- `append_climate_data.ipynb`: code to append the climate data to the geometry geojson
+This project provides an end-to-end framework for predicting mushroom occurrences. It integrates multiple data sources to capture the complex interplay of environmental conditions that influence fungal growth.
 
-### Environmental data ⛰️
+### Data Sources
 
-- *Elevation data (NASA SRTM V3 product)* : `append_elevation.ipynb`
-- *Corine map*: `LC.ipynb` 
-- *Soilgrid map*: soilgrid.ipynb
+The model is trained on a combination of biotic, climatic, topographic, and soil-related data:
 
-## Training code
+-   **Mushroom Occurrences**: Positive samples are sourced from iNaturalist (`fetch_mush_data.ipynb`). Negative samples are generated randomly across the study area (`make_negative.ipynb`).
+-   **Climate Data**: Historical and near-real-time weather data (e.g., temperature, precipitation) are fetched from the Open-Meteo API (`get_climate_data.ipynb`).
+-   **Topography**: Elevation and aspect data are derived from NASA's Shuttle Radar Topography Mission (SRTM) Version 3 product (`append_elevation.ipynb`).
+-   **Land Cover**: Land use and land cover information is sourced from the Corine Land Cover dataset (`LC.ipynb`).
+-   **Soil Composition**: Soil properties are obtained from SoilGrids (`soilgrid.ipynb`).
 
-- *GradientBoostingClassifier*: code to train the model is in `train_model.ipynb`
+### Methodology
 
+The workflow is divided into two main phases: model training and production inference.
 
-## Metrics
+1.  **Data Preprocessing**: All data sources are cleaned, aligned, and integrated into a unified dataset. This involves linking climate and environmental data to each mushroom occurrence point (or negative sample point).
+2.  **Model Training**: A `GradientBoostingClassifier` is trained on the preprocessed dataset to learn the relationship between the environmental features and mushroom presence (`train_model.ipynb`).
+3.  **Inference**: A containerized pipeline automates the daily generation of prediction maps. It prepares an inference grid, fetches the latest climate data, runs the model to predict presence probabilities, and uploads the final map to Ellipsis Drive.
 
-| **Parameter/Metric**      | **Value**                          |
-|---------------------------|------------------------------------|
-| **Best Parameters**       | `learning_rate`: 0.1, `max_depth`: 5, `n_estimators`: 100 |
-| **Overall Accuracy**      | 87.34% (0.873)                    |
+## Repository Structure
 
-| **Class**                   | **Precision** | **Recall** | **F1-Score** | **Support** |
-|-----------------------------|---------------|------------|--------------|-------------|
-| *Boletus edulis* (Positive) | 0.93          | 0.77       | 0.84         | 35          |
-| *None* (Negative)           | 0.84          | 0.95       | 0.89         | 44          |
+The repository is organized as follows:
 
-| **Average Metrics**         | **Precision** | **Recall** | **F1-Score** | **Support** |
-|-----------------------------|---------------|------------|--------------|-------------|
-| **Macro Average**           | 0.89          | 0.86       | 0.87         | 79          |
-| **Weighted Average**        | 0.88          | 0.87       | 0.87         | 79          |
+```
+ShroomRadar/
+│
+├── .env                  # Environment variables
+├── data/                 # Raw and processed data files
+├── notebooks/            # Jupyter notebooks for data processing and modeling
+├── docker/               # Dockerized production pipeline
+│   ├── main.py           # Main script for orchestrating the pipeline
+│   └── ...
+├── assets/               # Images and static assets for documentation
+└── README.md             # Project documentation
+```
 
-## Inference
+## Installation
 
-In order to get new predictions out of the model, we need to fetch the climate and environment data for the region of interest. The repository contains code to generate a heatmap that shows the probability distribution for a specific day, using as input a gridded geometry.
+To set up the project locally, clone the repository and install the required dependencies.
 
-### Gridded map 🌐
+```bash
+git clone https://github.com/your-username/ShroomRadar.git
+cd ShroomRadar
+pip install -r requirements.txt
+```
 
-- `grid.ipynb` contains the code to generate a gridded geojson. 
+For the production pipeline, Docker and Docker Compose are required. Please refer to the documentation in the `docker/` directory for detailed setup instructions.
 
-Input geometries (spain-provinces.geojson)   |  Output (spain_grid_3km.geojson)
-:-------------------------:|:-------------------------:
-<img src="assets/map.png" alt="drawing" width="300"/>  |  <img src="assets/grid.png" alt="drawing" width="300"/>
+## Usage Workflow
 
+The project is structured around two key workflows: training a new model and running the inference pipeline.
 
-### Attach the environmental data
+### 1. Data Preparation and Model Training
 
-### Attach the climate data
+The Jupyter notebooks in the `notebooks/` directory guide you through the process of preparing data and training the model. The primary steps are:
 
-### Inference
+-   **Data Acquisition**:
+    -   `fetch_mush_data.ipynb`: Download mushroom species data from iNaturalist.
+    -   `make_negative.ipynb`: Generate negative samples for training.
+-   **Feature Engineering**:
+    -   `get_climate_data.ipynb`: Download historical climate data for each sample.
+    -   `append_elevation.ipynb`: Append elevation and aspect data.
+    -   `LC.ipynb`: Append Corine Land Cover data.
+    -   `soilgrid.ipynb`: Append SoilGrids data.
+-   **Model Training**:
+    -   `train_model.ipynb`: Train the `GradientBoostingClassifier` on the final dataset.
 
+### 2. Inference Pipeline
+
+The inference process generates daily mushroom presence predictions for a specified area of interest.
+
+#### Preparing the Grid for Inference
+
+Before running the main pipeline, a gridded GeoJSON of the area of interest must be prepared with static environmental data.
+
+1.  **Generate Grid** 🌐: Use `grid.ipynb` to create a gridded GeoJSON file from an input geometry.
+
+| Input (`spain-provinces.geojson`) | Output (`spain_grid_3km.geojson`) |
+| :-------------------------------- | :-------------------------------- |
+| <img src="assets/map.png" alt="drawing" width="300"/> | <img src="assets/grid.png" alt="drawing" width="300"/> |
+
+2.  **Append Static Data**: Enrich the grid with static environmental data using the same notebooks as in the training workflow (`append_elevation.ipynb`, `LC.ipynb`, `soilgrid.ipynb`).
+
+#### Production Inference
+
+The production pipeline is containerized using Docker and orchestrated by `docker/main.py`. It takes the pre-prepared gridded GeoJSON and performs the following steps automatically:
+
+1.  **Append Near-Real-Time Climate Data**: Fetches and appends the latest 14-day climate data from the Open-Meteo API.
+2.  **Generate Predictions**: Loads the trained model and computes the presence probability for each grid cell.
+3.  **Filter and Post-process**: Filters the predictions to retain locations with a probability score above a defined threshold.
+4.  **Upload Results**: Uploads the final GeoJSON prediction map to a designated service, such as Ellipsis Drive.
+
+## Outputs
+
+The primary output of this project is a GeoJSON file representing the daily probability of mushroom presence for a given area. Each feature in the GeoJSON corresponds to a grid cell and includes a `prediction_score` attribute.
