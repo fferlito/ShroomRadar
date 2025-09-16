@@ -9,6 +9,7 @@ import geopandas as gpd
 import xarray as xr
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor
+import pandas as pd
 
 def get_unique_dates_from_csv(
     csv_file_path: str, limit_rows: int | None = None
@@ -239,55 +240,142 @@ def download_climate_data_from_csv_fixed(
 
 
 
-############################ to be adapted 
 
-def process_raster(data_file, polygon_gdf):
-    """Open NetCDF with xarray (CF-aware) and compute polygon means."""
-    return
+def sample_nc_point(file_path, lon, lat):
+    """Read one NetCDF file and return interpolated value at (lon, lat)."""
+    if not os.path.isfile(file_path):
+        return np.nan
 
-def get_environmental_data(polygon_gdf, date, base_dir, variables, num_days, num_threads):
-    mean_values = {var: [] for var in variables}
-    tasks = []
+    try:
+        with xr.open_dataset(file_path, engine="netcdf4", decode_cf=True) as ds:
+            var_candidates = [v for v in ds.data_vars
+                              if v.lower() not in ("lat", "latitude", "lon", "longitude", "time")]
+            if not var_candidates:
+                return np.nan
+            vname = var_candidates[0]
+            da = ds[vname]
 
-    with ProcessPoolExecutor(max_workers=num_threads) as executor:
-        for i in tqdm(range(num_days), desc="Processing days"):
-            current_date = date - timedelta(days=i)
-            file_date_str = current_date.strftime("%Y") + str(current_date.timetuple().tm_yday).zfill(3)
+            # Rename dims if needed
+            rename_map = {}
+            if "latitude" in da.dims: rename_map["latitude"] = "lat"
+            if "longitude" in da.dims: rename_map["longitude"] = "lon"
+            if rename_map:
+                da = da.rename(rename_map)
 
-            for variable in variables:
-                nrt_file = os.path.join(base_dir, "NRT", variable, "Daily", f"{file_date_str}.nc")
-                past_file = os.path.join(base_dir, "Past", variable, "Daily", f"{file_date_str}.nc")
+            if "time" in da.dims:
+                da = da.isel(time=0)
 
-                if os.path.isfile(nrt_file):
-                    data_file = nrt_file
-                elif os.path.isfile(past_file):
-                    data_file = past_file
-                else:
-                    ic(f"File not found for {variable} on {file_date_str}")
-                    mean_values[variable].extend([np.nan] * len(polygon_gdf))
-                    continue
+            if not (("lat" in da.dims) and ("lon" in da.dims)):
+                return np.nan
 
-                tasks.append((variable, executor.submit(process_raster, data_file, polygon_gdf)))
+            # Bilinear interpolation, fallback to nearest
+            val = da.interp(lat=lat, lon=lon, method="linear").values.item()
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                val = da.interp(lat=lat, lon=lon, method="nearest").values.item()
 
-        # collect results
-        for variable, future in tqdm(tasks, desc="Processing tasks"):
-            mean_values[variable].extend(future.result())
-
-    return mean_values
+            return float(val) if val is not None else np.nan
+    except Exception as e:
+        print(f"⚠️ Error reading {file_path}: {e}")
+        return np.nan
 
 
-def generate_input_model(input_geojson, output_geojson,
-                         data_dir: str = "climate_data", num_days: int = 14, num_threads: int = 8):
+def get_environmental_data(lon, lat, date, base_dir, variable, num_days=14):
+    """Get 14-day timeseries for a variable at coord, with NRT→Past fallback and temporal interpolation."""
+    values = []
+    for i in range(num_days):
+        current_date = date - timedelta(days=i)
+        file_date_str = current_date.strftime('%Y') + str(current_date.timetuple().tm_yday).zfill(3)
+
+        nrt_file = os.path.join(base_dir, "NRT", variable, "Daily", f"{file_date_str}.nc")
+        past_file = os.path.join(base_dir, "Past", variable, "Daily", f"{file_date_str}.nc")
+
+        if os.path.isfile(nrt_file):
+            data_file = nrt_file
+        elif os.path.isfile(past_file):
+            data_file = past_file
+        else:
+            values.append(np.nan)
+            continue
+
+        val = sample_nc_point(data_file, lon, lat)
+        values.append(val)
+
+    # interpolate missing values in time
+    s = pd.Series(values[::-1])  # oldest→newest
+    s = s.interpolate(limit_direction="both")
+    return s[::-1].tolist()  # back to newest→oldest
+
+
+def process_point(args):
+    """
+    Worker function for parallel processing. Fetches all climate variables for a single point.
+    """
+    index, row, variables, test_date, data_dir, num_days = args
+    centroid = row.geometry.centroid
+    lon, lat = centroid.x, centroid.y
+
+    # This dictionary will store the results for one row
+    feature_results = {"index": index}
+
+    for var in variables:
+        env_data = get_environmental_data(lon, lat, test_date, data_dir, var, num_days)
+        for i, val in enumerate(env_data, start=1):
+            feature_results[f"{var}_{i}"] = val
+
+    return feature_results
+
+
+
+
+def generate_input_model(input_geojson: str, output_geojson: str,
+                         data_dir: str = "climate_data", num_days: int = 14):
+    """
+    Enriches a GeoJSON file with climate data for the centroid of each feature using parallel processing.
+
+    Args:
+        input_geojson (str): Path to the input GeoJSON file.
+        output_geojson (str): Path to save the enriched GeoJSON file.
+        data_dir (str): Directory containing the climate data. Defaults to "climate_data".
+        num_days (int): The number of past days to fetch climate data for. Defaults to 14.
+    """
+    # Resolve the absolute path to the data directory to ensure it's found correctly
+    script_dir = pathlib.Path(__file__).parent
+    project_root = script_dir.parent
+    absolute_data_dir = str(project_root / data_dir)
+
+    if not os.path.exists(absolute_data_dir):
+        raise FileNotFoundError(f"Climate data directory not found at: {absolute_data_dir}")
+
+    ic(f"Using absolute path for climate data: {absolute_data_dir}")
+
     gdf = gpd.read_file(input_geojson).to_crs("EPSG:4326")
     test_date = datetime.today() - timedelta(days=1)
     variables = ["P", "Pres", "RelHum", "SpecHum", "Temp", "Tmax", "Tmin"]
 
-    ic("Starting to calculate environmental data...")
-    mean_values = get_environmental_data(gdf, test_date, data_dir, variables, num_days, num_threads)
+    # Prepare columns for the new data
+    for var in variables:
+        for i in range(1, num_days + 1):
+            gdf[f"{var}_{i}"] = np.nan
 
-    for variable, values in tqdm(mean_values.items(), desc="Adding results to GeoDataFrame"):
-        for day_index in range(num_days):
-            gdf[f"{variable}_{day_index+1}"] = values[day_index::num_days]
+    ic("Starting parallel extraction of environmental data...")
+    futures = []
+    with ProcessPoolExecutor(4) as executor:
+        for index, row in gdf.iterrows():
+            args = (index, row, variables, test_date, absolute_data_dir, num_days)
+            futures.append(executor.submit(process_point, args))
+
+        # Retrieve results as they complete, with a progress bar
+        results = []
+        for future in tqdm(futures, total=len(gdf), desc="Processing features"):
+            results.append(future.result())
+
+
+    # Update the GeoDataFrame with the results from the parallel processes
+    ic("Updating GeoDataFrame with results...")
+    for result in tqdm(results, desc="Updating GeoDataFrame"):
+        index = result.pop("index")
+        for col, value in result.items():
+            gdf.at[index, col] = value
 
     gdf.to_file(output_geojson, driver="GeoJSON")
-    ic("✅ Data has been updated and saved to", output_geojson)
+    ic(f"✅ Data has been updated and saved to {output_geojson}")

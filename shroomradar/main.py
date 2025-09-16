@@ -36,22 +36,23 @@ def run_pipeline():
 
 
     ic("🌦️ Adding climate data...")
-    write_today_structure_to_file(file_path)
-    run_rclone_sync(file_path, dest, rclone_path)
+    #write_today_structure_to_file(file_path)
+    #run_rclone_sync(file_path, dest, rclone_path)
     generate_input_model(
         path_input_geojson,
         path_geojson_with_climate,
+        data_dir=dest,
         num_days=14,
     )
     ic("Climate data added!")
 
     ic("Generate predictions...")
-    #generarate_predictions(path_geojson_with_climate, path_output_geojson)
-    #filter_predictions(path_output_geojson, path_filtered_geojson, threshold=0.0008)
+    generarate_predictions(path_geojson_with_climate, path_output_geojson)
+    filter_predictions(path_output_geojson, path_filtered_geojson, threshold=0.0008)
 
     ## TODO: add multiple geojsons
     ic("Upload to ellipsis...")
-    #refresh_timestamps(path_output_geojson)
+    refresh_timestamps(path_output_geojson)
 
 
 if __name__ == "__main__":
