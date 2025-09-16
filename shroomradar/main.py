@@ -2,9 +2,8 @@ from icecream import ic
 import fire
 
 from .src.ellipsis import refresh_timestamps
-from .get_predictions import filter_predictions, generarate_predictions
-from .append_data import generate_input_model
-from .src.climate import write_today_structure_to_file, run_rclone_sync
+from .src.climate import write_today_structure_to_file, run_rclone_sync, generate_input_model
+from .src.model import filter_predictions, generarate_predictions
 
 
 def run_pipeline():
@@ -23,7 +22,7 @@ def run_pipeline():
     path_filtered_geojson = "data/outputs/BC_readyclean.geojson"
     file_path = "data/environmental_data/file_structure_with_14_days.txt"
     dest = "data/environmental_data"
-    
+
 
     ic("🌦️ Adding climate data...")
     write_today_structure_to_file(file_path)
