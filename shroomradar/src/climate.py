@@ -11,6 +11,28 @@ import numpy as np
 from concurrent.futures import ProcessPoolExecutor
 import pandas as pd
 
+
+def extract_coordinates(coord_str):
+    if not coord_str or coord_str == '()':
+        return None
+    return tuple(map(float, coord_str.strip("()").split(', ')))
+    
+
+
+def parse_datetime_with_timezone(datetime_str):
+    """Try to parse different date formats; return None if invalid."""
+    if not datetime_str:
+        return None
+    datetime_str = datetime_str.split(" ")[0]
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"):
+        try:
+            return datetime.strptime(datetime_str, fmt)
+        except ValueError:
+            continue
+    print(f"⚠️ Skipping unparsable date: {datetime_str}")
+    return None
+
+
 def get_unique_dates_from_csv(
     csv_file_path: str, limit_rows: int | None = None
 ) -> list[datetime]:
@@ -147,7 +169,7 @@ def write_today_structure_to_file(file_path):
     structure.extend(["+ /NRT/Temp/Daily/" + date + ".nc" for date in date_strings])
     structure.append("- *")
 
-    with open(file_path, "w") as file:
+    with open(file_path, "w", encoding="utf-8") as file:
         for line in structure:
             file.write(line + "\n")
 
@@ -202,10 +224,11 @@ def run_rclone_sync(
         print("❌ Error: rclone executable not found.")
 
 
-def download_climate_data_from_csv_fixed(
+def download_climate_data_from_csv(
     csv_file_path: str,
     dest_folder: str = "..//climate_data",
     limit_rows: int | None = None,
+    rclone_path: str = os.path.join("..", "data", "rclone.exe"),
 ) -> str:
     """
     Orchestrates the download of climate data based on a CSV file of observations.
@@ -213,7 +236,7 @@ def download_climate_data_from_csv_fixed(
     This function performs a two-step process:
     1. It calls `generate_file_structure_from_csv` to create an rclone filter file
        containing the paths of all required climate data files.
-    2. It then calls `run_rclone_sync_fixed` to execute an rclone command that
+    2. It then calls `run_rclone_sync` to execute an rclone command that
        downloads only the files specified in the filter file.
 
     Args:
@@ -222,6 +245,7 @@ def download_climate_data_from_csv_fixed(
                            Defaults to "..//climate_data".
         limit_rows (Optional[int]): The maximum number of rows to process from the CSV.
                                     If None, all rows are processed. Defaults to None.
+        rclone_path (str): The path to the rclone executable.
 
     Returns:
         str: The path to the generated filter file.
@@ -234,7 +258,7 @@ def download_climate_data_from_csv_fixed(
     )
 
     print("Step 2: Downloading climate data files...")
-    run_rclone_sync(filter_file_path, dest_folder)
+    run_rclone_sync(filter_file_path, dest_folder, rclone_path)
 
     return filter_file_path
 
@@ -274,7 +298,7 @@ def sample_nc_point(file_path, lon, lat):
                 val = da.interp(lat=lat, lon=lon, method="nearest").values.item()
 
             return float(val) if val is not None else np.nan
-    except Exception as e:
+    except (IOError, ValueError) as e:
         print(f"⚠️ Error reading {file_path}: {e}")
         return np.nan
 

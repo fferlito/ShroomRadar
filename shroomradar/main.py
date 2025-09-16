@@ -1,9 +1,9 @@
 from icecream import ic
 import fire
 import os
-from src.ellipsis import refresh_timestamps
-from src.climate import write_today_structure_to_file, run_rclone_sync, generate_input_model
-from src.model import filter_predictions, generarate_predictions
+from src.ellipsis import refresh_timestamps  # pylint: disable=import-error
+from src.climate import write_today_structure_to_file, run_rclone_sync, generate_input_model # pylint: disable=import-error
+from src.model import filter_predictions, generarate_predictions # pylint: disable=import-error
 
 
 def run_pipeline():
@@ -36,8 +36,8 @@ def run_pipeline():
 
 
     ic("🌦️ Adding climate data...")
-    #write_today_structure_to_file(file_path)
-    #run_rclone_sync(file_path, dest, rclone_path)
+    write_today_structure_to_file(file_path)
+    run_rclone_sync(file_path, dest, rclone_path)
     generate_input_model(
         path_input_geojson,
         path_geojson_with_climate,
