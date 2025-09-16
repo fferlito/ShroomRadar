@@ -3,6 +3,8 @@ import subprocess
 import csv
 from datetime import datetime, timedelta
 from tqdm import tqdm
+from icecream import ic
+import pathlib
 
 
 def get_unique_dates_from_csv(
@@ -31,9 +33,7 @@ def get_unique_dates_from_csv(
         csvfile.seek(0)  # Reset file pointer
         reader = csv.DictReader(csvfile)
 
-        progress_bar = tqdm(
-            reader, total=limit_rows or total_rows, desc="Reading CSV"
-        )
+        progress_bar = tqdm(reader, total=limit_rows or total_rows, desc="Reading CSV")
         for i, row in enumerate(progress_bar):
             if limit_rows is not None and i >= limit_rows:
                 break
@@ -118,8 +118,37 @@ def generate_file_structure_from_csv(
     return file_list
 
 
+def get_date_strings():
+    today = datetime.today()
+    # Start from yesterday (skip today) and get 14 days
+    date_strings = [(today - timedelta(days=i + 1)).strftime("%Y%j") for i in range(15)]
+    return date_strings
 
-def run_rclone_sync_fixed(
+
+def write_today_structure_to_file(file_path):
+
+    file_path = pathlib.Path(file_path)
+    ic(file_path)
+    os.makedirs(file_path.parent, exist_ok=True)
+
+    date_strings = get_date_strings()
+
+    structure = ["+ /NRT/Wind/Daily/" + date + ".nc" for date in date_strings]
+    structure.extend(["+ /NRT/P/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/Pres/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/RelHum/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/SpecHum/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/Tmin/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/Tmax/Daily/" + date + ".nc" for date in date_strings])
+    structure.extend(["+ /NRT/Temp/Daily/" + date + ".nc" for date in date_strings])
+    structure.append("- *")
+
+    with open(file_path, "w") as file:
+        for line in structure:
+            file.write(line + "\n")
+
+
+def run_rclone_sync(
     filter_file_path: str, dest_folder: str = "climate_data"
 ) -> None:
     """
@@ -198,6 +227,6 @@ def download_climate_data_from_csv_fixed(
     )
 
     print("Step 2: Downloading climate data files...")
-    run_rclone_sync_fixed(filter_file_path, dest_folder)
+    run_rclone_sync(filter_file_path, dest_folder)
 
     return filter_file_path
