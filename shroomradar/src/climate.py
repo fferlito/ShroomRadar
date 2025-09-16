@@ -5,7 +5,10 @@ from datetime import datetime, timedelta
 from tqdm import tqdm
 from icecream import ic
 import pathlib
-
+import geopandas as gpd
+import xarray as xr
+import numpy as np
+from concurrent.futures import ProcessPoolExecutor
 
 def get_unique_dates_from_csv(
     csv_file_path: str, limit_rows: int | None = None
@@ -149,7 +152,9 @@ def write_today_structure_to_file(file_path):
 
 
 def run_rclone_sync(
-    filter_file_path: str, dest_folder: str = "climate_data"
+    filter_file_path: str,
+    dest_folder: str = "climate_data",
+    rclone_path: str = os.path.join("..", "data", "rclone.exe"),
 ) -> None:
     """
     Executes the rclone sync command to download specified climate data files.
@@ -157,17 +162,18 @@ def run_rclone_sync(
     This function constructs and runs an `rclone sync` command to transfer files
     from a shared Google Drive folder ('google:/MSWX_V100') to a local destination.
     It uses a filter file to selectively download only the required data, making the
-    process efficient. The function assumes `rclone.exe` is located at `../docker/rclone.exe`.
+    process efficient.
 
     Args:
         filter_file_path (str): The path to the text file containing rclone filter rules.
         dest_folder (str): The local directory where the climate data will be saved.
                            Defaults to "climate_data".
+        rclone_path (str): The path to the rclone executable. Defaults to a relative path.
 
     Returns:
         None
     """
-    rclone_path = os.path.join("..", "docker", "rclone.exe")
+
 
     if not os.path.exists(rclone_path):
         print(f"❌ Error: rclone not found at {rclone_path}")
@@ -230,3 +236,58 @@ def download_climate_data_from_csv_fixed(
     run_rclone_sync(filter_file_path, dest_folder)
 
     return filter_file_path
+
+
+
+############################ to be adapted 
+
+def process_raster(data_file, polygon_gdf):
+    """Open NetCDF with xarray (CF-aware) and compute polygon means."""
+    return
+
+def get_environmental_data(polygon_gdf, date, base_dir, variables, num_days, num_threads):
+    mean_values = {var: [] for var in variables}
+    tasks = []
+
+    with ProcessPoolExecutor(max_workers=num_threads) as executor:
+        for i in tqdm(range(num_days), desc="Processing days"):
+            current_date = date - timedelta(days=i)
+            file_date_str = current_date.strftime("%Y") + str(current_date.timetuple().tm_yday).zfill(3)
+
+            for variable in variables:
+                nrt_file = os.path.join(base_dir, "NRT", variable, "Daily", f"{file_date_str}.nc")
+                past_file = os.path.join(base_dir, "Past", variable, "Daily", f"{file_date_str}.nc")
+
+                if os.path.isfile(nrt_file):
+                    data_file = nrt_file
+                elif os.path.isfile(past_file):
+                    data_file = past_file
+                else:
+                    ic(f"File not found for {variable} on {file_date_str}")
+                    mean_values[variable].extend([np.nan] * len(polygon_gdf))
+                    continue
+
+                tasks.append((variable, executor.submit(process_raster, data_file, polygon_gdf)))
+
+        # collect results
+        for variable, future in tqdm(tasks, desc="Processing tasks"):
+            mean_values[variable].extend(future.result())
+
+    return mean_values
+
+
+def generate_input_model(input_geojson, output_geojson,
+                         data_dir: str = "climate_data", num_days: int = 14, num_threads: int = 8):
+    gdf = gpd.read_file(input_geojson).to_crs("EPSG:4326")
+    test_date = datetime.today() - timedelta(days=1)
+    variables = ["P", "Pres", "RelHum", "SpecHum", "Temp", "Tmax", "Tmin"]
+
+    ic("Starting to calculate environmental data...")
+    mean_values = get_environmental_data(gdf, test_date, data_dir, variables, num_days, num_threads)
+
+    for variable, values in tqdm(mean_values.items(), desc="Adding results to GeoDataFrame"):
+        for day_index in range(num_days):
+            gdf[f"{variable}_{day_index+1}"] = values[day_index::num_days]
+
+    gdf.to_file(output_geojson, driver="GeoJSON")
+    ic("✅ Data has been updated and saved to", output_geojson)
