@@ -67,6 +67,14 @@ pip install -r docker/requirements.txt
 
 For the production pipeline, Docker, a GCP account and access to Ellipsis drive is required. Please refer to the documentation in the `docker/` directory for detailed setup instructions.
 
+#### Set up rclone
+
+...
+
+#### Set up GCP
+
+...
+
 ## Usage Workflow
 
 The project is structured around two key workflows: training a new model and running the inference pipeline.
