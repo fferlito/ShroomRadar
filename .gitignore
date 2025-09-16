@@ -168,3 +168,4 @@ docker/rclone.*
 docker/rclone.conf
 docker/ellipsis.py
 .vscode
+notebooks/*.txt
