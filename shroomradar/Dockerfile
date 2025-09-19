@@ -1,5 +1,5 @@
 # Use official Python image as a base
-FROM python:3.9
+FROM python:3.13
 
 # Install system dependencies including curl, unzip, and fuse
 RUN apt-get update && apt-get install -y \
@@ -14,11 +14,19 @@ RUN curl -fsSL https://downloads.rclone.org/rclone-current-linux-amd64.zip -o rc
     chmod +x /usr/local/bin/rclone && \
     cd .. && rm -rf rclone.zip rclone-*-linux-amd64
 
+
+# Add Tippecanoe
+RUN apt-get update && apt-get install -y build-essential libsqlite3-dev zlib1g-dev \
+&& git clone https://github.com/mapbox/tippecanoe.git \
+&& cd tippecanoe && make -j && make install \
+&& cd .. && rm -rf tippecanoe
+
+
 # Create Rclone config directory
 RUN mkdir -p /root/.config/rclone/
 
 # Copy pre-generated Rclone configuration file
-COPY rclone.conf /root/.config/rclone/rclone.conf
+COPY data/rclone.conf /root/.config/rclone/rclone.conf
 
 # Set the working directory inside the container
 WORKDIR /app
