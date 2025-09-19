@@ -381,8 +381,10 @@ def enrich_csv(
     output_csv: str,
     out_dir: str = "dem_tiles",
     download_tiles: bool = True,
-    variables: list[str] = ["dem", "slope", "aspect", "geomorphons"],
+    variables: list[str] | None = None,
     verbose: bool = True,
+    lat_col: str = "y",
+    lon_col: str = "x",
 ) -> None:
     """
     Enriches a CSV file with topographic data derived from Digital Elevation Models (DEMs).
@@ -417,6 +419,8 @@ def enrich_csv(
                     contains invalid options.
     """
 
+    if variables is None:
+        variables = ["dem", "slope", "aspect", "geomorphons"]
 
     if verbose:
         logging.basicConfig(
@@ -460,12 +464,12 @@ def enrich_csv(
 
     logger.info(f"Loading CSV: {input_csv}")
     df = pd.read_csv(input_csv)
-    df = df[df["y"].between(-56, 60)]
+    df = df[df[lat_col].between(-56, 60)]
 
     logger.info(f"Loaded {len(df)} rows")
 
     # Validate required columns
-    required_cols = ["x", "y"]
+    required_cols = [lon_col, lat_col]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
         raise ValueError(f"Missing required columns: {missing_cols}")
@@ -524,7 +528,7 @@ def enrich_csv(
     invalid_coord_rows = []
 
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Scanning CSV"):
-        lat, lon = row["y"], row["x"]
+        lat, lon = row[lat_col], row[lon_col]
 
         # Check for invalid coordinates
         if pd.isna(lat) or pd.isna(lon):
@@ -660,7 +664,7 @@ def enrich_csv(
         if i in invalid_coord_rows:
             continue
 
-        lat, lon = row["y"], row["x"]
+        lat, lon = row[lat_col], row[lon_col]
         tid = tile_id_from_coords(lat, lon)
         if tid is None:
             continue
@@ -857,7 +861,13 @@ def enrich_geojson(
     for tid, (tifs, source) in tqdm(downloaded.items(), desc="Running Whitebox"):
         for tif in tifs:
             tif_path, slope_tif, aspect_tif, geomorph_tif = run_whitebox(
-                tif, slope_dir, aspect_dir, geomorph_dir
+                tif,
+                need_slope=True,
+                need_aspect=True,
+                need_geomorph=True,
+                slope_dir=slope_dir,
+                aspect_dir=aspect_dir,
+                geomorph_dir=geomorph_dir,
             )
             tile_results[tid] = (tif_path, slope_tif, aspect_tif, geomorph_tif, source)
 

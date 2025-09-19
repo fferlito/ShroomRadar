@@ -6,55 +6,59 @@ import joblib
 from icecream import ic
 from tensorflow import keras
 
+
+
+
+
+
 def build_features(df, N=14, offset=0):
     features = pd.DataFrame(index=df.index)
-    days = [i for i in range(1+offset, N+1+offset) if i <= 14]
+    days = [i for i in range(1+offset, N+1+offset) if f'P_{i}' in df.columns]
 
-    # Extract rainfall window
+    # Extract
     rain_vals = df[[f'P_{i}' for i in days]]
+    temp_vals = df[[f'Temp_{i}' for i in days]]
+    tmax_vals = df[[f'Tmax_{i}' for i in days]]
+    tmin_vals = df[[f'Tmin_{i}' for i in days]]
+    rh_vals   = df[[f'RelHum_{i}' for i in days]]
 
-    # Rain
+    # --- Rain ---
     features['rain_sum'] = rain_vals.sum(axis=1)
     features['rain_max'] = rain_vals.max(axis=1)
-    features['rain_events'] = (rain_vals > 5).sum(axis=1)
-    features['rain_var'] = rain_vals.var(axis=1)  # distribution
-    features['rain_intensity'] = features['rain_sum'] / (features['rain_events'] + 1e-6)
+    features['rain_events'] = (rain_vals > 3).sum(axis=1)
+    features['rain_var'] = rain_vals.var(axis=1)
+    features['rain_concentration'] = features['rain_max'] / (features['rain_sum'] + 1e-6)
+    features['rain_persistence'] = (rain_vals > 1).astype(int).apply(lambda r: (np.diff(np.where(np.concatenate(([0], r.values, [0]))==0)[0]) - 1).max(), axis=1)
 
-    # Days since last rain >1mm
-    def calc_days_since_rain(row):
-        vals = row.values[::-1]  # reverse (day 14 back to day 1)
-        for i, v in enumerate(vals, 1):
-            if v > 1:
-                return i
-        return N  # no rain in window → max lag
-    features['days_since_rain'] = rain_vals.apply(calc_days_since_rain, axis=1)
 
-    # Longest dry spell (<1mm)
-    def calc_dry_spell(row):
-        dry_streak = 0
-        max_streak = 0
-        for v in row.values:
-            if v < 1:
-                dry_streak += 1
-                max_streak = max(max_streak, dry_streak)
-            else:
-                dry_streak = 0
-        return max_streak
-    features['max_dry_spell'] = rain_vals.apply(calc_dry_spell, axis=1)
+    def calc_api(rain, decay=0.85):
+        return sum(rain.iloc[::-1].values * (decay ** np.arange(len(rain))))
 
-    # Temp
-    features['temp_mean'] = df[[f'Temp_{i}' for i in days]].mean(axis=1)
-    features['tmax_mean'] = df[[f'Tmax_{i}' for i in days]].mean(axis=1)
-    features['tmin_mean'] = df[[f'Tmin_{i}' for i in days]].mean(axis=1)
+    features['api'] = rain_vals.apply(calc_api, axis=1)
+
+    # --- Temp ---
+    features['temp_mean'] = temp_vals.mean(axis=1)
+    features['temp_std'] = temp_vals.std(axis=1)
+    features['tmax_mean'] = tmax_vals.mean(axis=1)
+    features['tmin_mean'] = tmin_vals.mean(axis=1)
     features['temp_range'] = features['tmax_mean'] - features['tmin_mean']
+    features['degree_days'] = temp_vals.apply(lambda r: np.sum(np.maximum(0, r-10)), axis=1)
+    features['frost_days'] = (tmin_vals < 0).sum(axis=1)
 
-    # Humidity
-    features['relhum_mean'] = df[[f'RelHum_{i}' for i in days]].mean(axis=1)
-    features['relhum_min'] = df[[f'RelHum_{i}' for i in days]].min(axis=1)
+    # --- Humidity ---
+    features['relhum_mean'] = rh_vals.mean(axis=1)
+    features['relhum_min'] = rh_vals.min(axis=1)
+    features['relhum_std'] = rh_vals.std(axis=1)
+    features['high_humidity_days'] = (rh_vals > 85).sum(axis=1)
 
-    # Terrain
+    # --- Terrain ---
     features['dem'] = df['dem']
     features['slope'] = df['slope']
+
+
+    # --- Interactions ---
+    features['moisture_index'] = features['rain_sum'] * features['relhum_mean']
+    features['drought_stress'] = features['temp_mean'] * features['rain_var']
 
     return features
 

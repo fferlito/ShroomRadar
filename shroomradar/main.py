@@ -107,7 +107,7 @@ def run_pipeline():
         "data/base_maps/grid_tuscany_with_topography_climate.geojson"
     )
     path_output_geojson = (
-        "data/outputs/grid_tuscany_with_topography_predictions3.geojson"
+        "data/outputs/grid_tuscany_with_topography_predictions4.geojson"
     )
     file_path = "data/environmental_data/file_structure_with_14_days.txt"
     dest = "data//environmental_data"
@@ -115,9 +115,8 @@ def run_pipeline():
         rclone_path = os.path.join("data", "rclone.exe")
     else:
         rclone_path = "rclone"
-    model_path = os.path.join("data", "models", "CalibratedClassifierCV3.pkl")
+    model_path = os.path.join("data", "models", "XGBClassifier.pkl")
 
-    """
     ic("🌦️ Adding climate data...")
     write_today_structure_to_file(file_path)
     run_rclone_sync(file_path, dest, rclone_path)
@@ -128,7 +127,6 @@ def run_pipeline():
         num_days=14,
     )
     ic("Climate data added!")
-"""
     ic("Generate predictions...")
     generarate_predictions(
         path_geojson_with_climate,
