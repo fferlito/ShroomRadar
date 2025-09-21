@@ -2,6 +2,7 @@ from icecream import ic
 import fire
 import os
 import platform
+import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from google.cloud import storage
@@ -10,134 +11,82 @@ from src.climate import (
     run_rclone_sync,
     generate_input_model,
 )  # pylint: disable=import-error
-from src.model import (
-    filter_predictions,
-    generarate_predictions,
-)  # pylint: disable=import-error
+from src.model import generarate_predictions  # pylint: disable=import-error
+from src.gcp import refresh_timestamps
+
+MODELS = {
+    "boletus_aestivalis_eng": os.path.join(
+        "data", "models", "Summer Bolete_XGBClassifier_eng.pkl"
+    ),
+    "boletus_aestivalis_eng_1000": os.path.join(
+        "data", "models", "Summer Bolete_XGBClassifier_eng_1000.pkl"
+    ),
+    "boletus_aestivalis": os.path.join(
+        "data", "models", "Summer Bolete_XGBClassifier.pkl"
+    ),
+}
 
 
-def refresh_timestamps(path_output_geojson: str):
-    tiles_dir = "/data/tiles"
-    bucket_name = "mushroom-radar-tiles"
-
-    os.makedirs(tiles_dir, exist_ok=True)
-
-    ic("🧩 Running Tippecanoe to generate vector tiles...")
-    subprocess.run(
-        [
-            "tippecanoe",
-            "-f",
-            "-e",
-            tiles_dir,
-            "-Z1",
-            "-z14",
-            "--no-tile-compression",
-            "--no-feature-limit",
-            "--no-tile-size-limit",
-            "--preserve-input-order",
-            path_output_geojson,
-        ],
-        check=True,
-    )
-
-    ic("✅ Tippecanoe finished successfully!")
-    ic("📂 Tiles generated:", os.listdir(tiles_dir)[:10])  # Debug: print first 10
-
-    client = storage.Client()
-    bucket = client.bucket(bucket_name)
-
-    file_list = []
-    for root, _, files in os.walk(tiles_dir):
-        for file in files:
-            local_path = os.path.join(root, file)
-            remote_path = "tiles/" + os.path.relpath(local_path, tiles_dir).replace(
-                "\\", "/"
-            )
-            file_list.append((local_path, remote_path))
-
-    ic(f"☁️ Found {len(file_list)} tiles to upload")
-
-    def upload_file(local_remote):
-        local_path, remote_path = local_remote
-        blob = bucket.blob(remote_path)
-        blob.cache_control = "no-store"
-        if local_path.endswith(".pbf"):
-            blob.content_type = "application/octet-stream"
-        elif local_path.endswith(".json"):
-            blob.content_type = "application/json"
-
-        blob.upload_from_filename(local_path)
-        blob.patch()  # actually apply metadata
-        return remote_path
-
-    with ThreadPoolExecutor(max_workers=16) as executor:
-        futures = {executor.submit(upload_file, f): f for f in file_list}
-        for i, future in enumerate(as_completed(futures), 1):
-            try:
-                remote_path = future.result()
-                if i % 1000 == 0 or i == len(file_list):
-                    ic(f"[{i}/{len(file_list)}] Uploaded {remote_path}")
-            except Exception as e:
-                ic(f"❌ Error uploading {futures[future][1]}: {e}")
-
-    ic("🎉 All tiles uploaded successfully to GCS!")
+AOIS = {
+    "tuscany": {"input_path": "data/base_maps/grid_tuscany_with_topography.geojson"},
+    "basque_country": {
+        "input_path": "data/base_maps/grid_basque_country_with_topography.geojson"
+    },
+}
 
 
 def run_pipeline():
     """
-    path_input_geojson = 'data/base_maps/siena_05_with_elevation_aspect_LC.geojson'
-    path_geojson_with_climate = 'data/base_maps/siena_with_climate.geojson'
-    path_output_geojson = 'data/outputs/map_siena.geojson'
-    path_filtered_geojson = 'data/outputs/siena_readyclean.geojson'
+    Main pipeline to generate mushroom predictions and upload tiles.
     """
-
-    """
-    path_input_geojson = (
-        "data/base_maps/basque_country_05_with_elevation_aspect.geojson"
-    )
-    path_geojson_with_climate = "data/base_maps/BC_with_climate.geojson"
-    path_output_geojson = "data/outputs/map_BC.geojson"
-    path_filtered_geojson = "data/outputs/BC_readyclean.geojson"
     file_path = "data/environmental_data/file_structure_with_14_days.txt"
     dest = "data/environmental_data"
-    """
 
-    path_input_geojson = "data/base_maps/grid_tuscany_with_topography.geojson"
-    path_geojson_with_climate = (
-        "data/base_maps/grid_tuscany_with_topography_climate.geojson"
-    )
-    path_output_geojson = (
-        "data/outputs/grid_tuscany_with_topography_predictions4.geojson"
-    )
-    file_path = "data/environmental_data/file_structure_with_14_days.txt"
-    dest = "data//environmental_data"
     if platform.system() == "Windows":
         rclone_path = os.path.join("data", "rclone.exe")
     else:
         rclone_path = "rclone"
-    model_path = os.path.join("data", "models", "XGBClassifier.pkl")
 
-    ic("🌦️ Adding climate data...")
+    ic("🌦️ Downloading climate data...")
     write_today_structure_to_file(file_path)
     run_rclone_sync(file_path, dest, rclone_path)
-    generate_input_model(
-        path_input_geojson,
-        path_geojson_with_climate,
-        data_dir=dest,
-        num_days=14,
-    )
-    ic("Climate data added!")
-    ic("Generate predictions...")
-    generarate_predictions(
-        path_geojson_with_climate,
-        path_output_geojson,
-        model_path=model_path,
-        use_engineered=True,
-    )
 
-    ## TODO: add multiple geojsons
-    ic("Upload to GCP...")
-    refresh_timestamps(path_output_geojson)
+    output_dir = "data/outputs"
+    os.makedirs(output_dir, exist_ok=True)
+
+    for model_name, model_path in MODELS.items():
+        for aoi_name, aoi_info in AOIS.items():
+            ic(f"Processing {model_name} for {aoi_name}")
+
+            path_input_geojson = aoi_info["input_path"]
+            base_name = os.path.splitext(os.path.basename(path_input_geojson))[0]
+
+            path_geojson_with_climate = os.path.join(
+                output_dir, f"{base_name}_climate.geojson"
+            )
+            path_output_geojson = os.path.join(
+                output_dir, f"{base_name}_{model_name}_predictions.geojson"
+            )
+
+            ic("🌦️ Adding climate data to AOI...")
+            generate_input_model(
+                path_input_geojson,
+                path_geojson_with_climate,
+                data_dir=dest,
+                num_days=14,
+            )
+
+            ic("🍄 Generating predictions...")
+            generarate_predictions(
+                path_geojson_with_climate,
+                path_output_geojson,
+                model_path=model_path,
+                use_engineered=True,
+            )
+
+            ic("☁️ Uploading to GCP...")
+            refresh_timestamps(path_output_geojson, model_name, aoi_name)
+            ic(f"✅ Finished processing {model_name} for {aoi_name}")
 
 
 if __name__ == "__main__":

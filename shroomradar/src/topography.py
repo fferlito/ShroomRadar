@@ -277,53 +277,38 @@ def run_whitebox(
     aspect_dir: str | None = None,
     geomorph_dir: str | None = None,
 ) -> tuple[str, str | None, str | None, str | None]:
-    """
-    Run WhiteboxTools to generate slope, aspect, and geomorphon rasters from a DEM.
 
-    This function takes a DEM file and selectively runs WhiteboxTools processes
-    to create derived raster products. It checks if the output files already
-    exist and are valid before running the tools, avoiding redundant processing.
+    # Always use absolute Windows-style paths
+    tif_file = os.path.abspath(tif_file)
 
-    Args:
-        tif_file (str): Path to the input DEM GeoTIFF file.
-        need_slope (bool, optional): Flag to generate a slope raster.
-            Defaults to False.
-        need_aspect (bool, optional): Flag to generate an aspect raster.
-            Defaults to False.
-        need_geomorph (bool, optional): Flag to generate a geomorphons raster.
-            Defaults to False.
-        slope_dir (str | None, optional): Directory to save the slope raster.
-            If None, saved next to the input DEM. Defaults to None.
-        aspect_dir (str | None, optional): Directory to save the aspect raster.
-            If None, saved next to the input DEM. Defaults to None.
-        geomorph_dir (str | None, optional): Directory to save the geomorphons raster.
-            If None, saved next to the input DEM. Defaults to None.
+    # Ensure output directories exist
+    if slope_dir:
+        os.makedirs(slope_dir, exist_ok=True)
+    if aspect_dir:
+        os.makedirs(aspect_dir, exist_ok=True)
+    if geomorph_dir:
+        os.makedirs(geomorph_dir, exist_ok=True)
 
-    Returns:
-        tuple[str, str | None, str | None, str | None]: A tuple containing the
-            absolute path to the input DEM, and the paths to the generated slope,
-            aspect, and geomorphon rasters. If a raster was not generated or is
-            invalid, its path will be None.
-    """
-    tif_file = os.path.abspath(tif_file).replace("\\", "/")
     base_name = os.path.splitext(os.path.basename(tif_file))[0]
 
-    # Create output paths in subfolders
-    slope_tif = (
+    slope_tif = os.path.abspath(
         os.path.join(slope_dir, f"{base_name}_slope.tif")
-        if slope_dir
-        else f"{os.path.splitext(tif_file)[0]}_slope.tif"
+        if slope_dir else f"{os.path.splitext(tif_file)[0]}_slope.tif"
     )
-    aspect_tif = (
+    aspect_tif = os.path.abspath(
         os.path.join(aspect_dir, f"{base_name}_aspect.tif")
-        if aspect_dir
-        else f"{os.path.splitext(tif_file)[0]}_aspect.tif"
+        if aspect_dir else f"{os.path.splitext(tif_file)[0]}_aspect.tif"
     )
-    geomorph_tif = (
+    geomorph_tif = os.path.abspath(
         os.path.join(geomorph_dir, f"{base_name}_geomorph.tif")
-        if geomorph_dir
-        else f"{os.path.splitext(tif_file)[0]}_geomorph.tif"
+        if geomorph_dir else f"{os.path.splitext(tif_file)[0]}_geomorph.tif"
     )
+
+    # Debug: print exactly what paths Whitebox will see
+    print(f"DEM input: {tif_file}")
+    print(f"Slope out: {slope_tif}")
+    print(f"Aspect out: {aspect_tif}")
+    print(f"Geomorph out: {geomorph_tif}")
 
     if need_slope and not valid_raster(slope_tif):
         wbt.slope(dem=tif_file, output=slope_tif, zfactor=1.0, units="degrees")
@@ -333,6 +318,7 @@ def run_whitebox(
         wbt.geomorphons(
             dem=tif_file, output=geomorph_tif, search=50, threshold=0.0, forms=True
         )
+
     return (
         tif_file,
         slope_tif if valid_raster(slope_tif) else None,
@@ -589,22 +575,21 @@ def enrich_csv(
     }
     logger.info(f"Found {len(tile_needs)} tiles that need processing")
 
-    # Step 2 & 3: Only run if download_tiles is True
-    downloaded = {}
+    # Step 2: Acquire DEM tiles
+    logger.info("Step 2: Acquiring DEM tiles...")
+    available_dems = {}
     tile_results = {}
-    if download_tiles:
-        logger.info("Step 2: Downloading and preparing tiles...")
-        for tid, needs in tqdm(tile_needs.items(), desc="Preparing tiles"):
-            local_tif = os.path.join(dem_dir, f"{tid}.tif")
-            if valid_raster(local_tif):
-                downloaded[tid] = ([local_tif], "Local")
-                continue
+    for tid, needs in tqdm(tile_needs.items(), desc="Acquiring tiles"):
+        local_tif = os.path.join(dem_dir, f"{tid}.tif")
+        if valid_raster(local_tif):
+            available_dems[tid] = ([local_tif], "Local")
+            continue
 
+        if download_tiles:
             m = re.match(r"([NS])(\d{2})([EW])(\d{3})", tid)
             if not m:
                 logger.warning(f"Could not parse tile ID: {tid}")
                 continue
-
             try:
                 lat0 = int(m.group(2)) * (1 if m.group(1) == "N" else -1)
                 lon0 = int(m.group(4)) * (1 if m.group(3) == "E" else -1)
@@ -613,49 +598,62 @@ def enrich_csv(
                 )
                 if zip_paths:
                     tifs = [prepare_tif(zp) for zp in zip_paths]
-                    # Move processed files to dem subfolder
                     moved_tifs = []
                     for tif in tifs:
                         target_path = os.path.join(dem_dir, f"{tid}.tif")
                         if tif != target_path:
-                            import shutil
-
                             shutil.move(tif, target_path)
                         moved_tifs.append(target_path)
-                    downloaded[tid] = (moved_tifs, source)
+                    available_dems[tid] = (moved_tifs, source)
                 else:
                     logger.warning(f"No DEM data available for tile {tid}")
                     stats["missing_tiles"] += 1
             except Exception as e:
                 logger.error(f"Error downloading tile {tid}: {str(e)}")
                 stats["missing_tiles"] += 1
+        else:
+            logger.debug(f"DEM for tile {tid} not found locally and download is disabled.")
+            stats["missing_tiles"] += 1
 
-        logger.info("Step 3: Running Whitebox processing...")
-        for tid, (tifs, source) in tqdm(downloaded.items(), desc="Running Whitebox"):
-            needs = tile_needs.get(tid, {})
-            for tif in tifs:
-                try:
-                    tif_path, slope_path, aspect_path, geomorph_path = run_whitebox(
-                        tif,
-                        need_slope=generate_slope and needs.get("slope", False),
-                        need_aspect=generate_aspect and needs.get("aspect", False),
-                        need_geomorph=generate_geomorphons
-                        and needs.get("geomorphon", False),
-                        slope_dir=slope_dir,
-                        aspect_dir=aspect_dir,
-                        geomorph_dir=geomorph_dir,
-                    )
-                    tile_results[tid] = {
-                        "tif": tif_path,
-                        "slope": slope_path,
-                        "aspect": aspect_path,
-                        "geomorphon": geomorph_path,
-                        "source": source,
-                    }
-                    break
-                except Exception as e:
-                    logger.error(f"Whitebox processing failed for tile {tid}: {str(e)}")
-                    continue
+    # Step 3: Running Whitebox processing...
+    logger.info("Step 3: Running Whitebox processing...")
+
+    # Process both locally found and downloaded tiles
+    all_tiles = available_dems.copy()
+
+
+    # Add local-only tiles (not in downloaded dict)
+    for tid, needs in tile_needs.items():
+        local_tif = os.path.join(dem_dir, f"{tid}.tif")
+        if valid_raster(local_tif) and tid not in all_tiles:
+            all_tiles[tid] = ([local_tif], "Local")
+
+    # Process everything (downloaded + local)
+    for tid, (tifs, source) in tqdm(all_tiles.items(), desc="Running Whitebox"):
+        needs = tile_needs.get(tid, {})
+        for tif in tifs:
+            try:
+                tif_path, slope_path, aspect_path, geomorph_path = run_whitebox(
+                    tif,
+                    need_slope=generate_slope and needs.get("slope", True),
+                    need_aspect=generate_aspect and needs.get("aspect", True),
+                    need_geomorph=generate_geomorphons and needs.get("geomorphon", True),
+                    slope_dir=slope_dir,
+                    aspect_dir=aspect_dir,
+                    geomorph_dir=geomorph_dir,
+                )
+                tile_results[tid] = {
+                    "tif": tif_path,
+                    "slope": slope_path,
+                    "aspect": aspect_path,
+                    "geomorphon": geomorph_path,
+                    "source": source,
+                }
+                break
+            except Exception as e:
+                logger.error(f"Whitebox processing failed for tile {tid}: {str(e)}")
+                continue
+
 
     # Step 4: Extract values from whatever exists
     logger.info("Step 4: Extracting values from rasters...")

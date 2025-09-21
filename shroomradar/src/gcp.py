@@ -4,6 +4,10 @@ import logging
 from google.cloud import storage
 from google.api_core import exceptions
 from tqdm import tqdm
+from icecream import ic
+import shutil
+import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Configure logging
 logging.basicConfig(
@@ -151,3 +155,71 @@ class GCSManager:
         if failures:
             for item, error in failures:
                 logging.error("  - %s: %s", item, error)
+
+
+def refresh_timestamps(path_output_geojson: str, model_name: str, aoi_name: str):
+    tiles_dir = "data/tiles"
+    bucket_name = "mushroom-radar-tiles"
+
+    if os.path.exists(tiles_dir):
+        shutil.rmtree(tiles_dir)
+    os.makedirs(tiles_dir, exist_ok=True)
+
+    ic("🧩 Running Tippecanoe to generate vector tiles...")
+    subprocess.run(
+        [
+            "tippecanoe",
+            "-f",
+            "-e",
+            tiles_dir,
+            "-Z1",
+            "-z14",
+            "--no-tile-compression",
+            "--no-feature-limit",
+            "--no-tile-size-limit",
+            "--preserve-input-order",
+            path_output_geojson,
+        ],
+        check=True,
+    )
+
+    ic("✅ Tippecanoe finished successfully!")
+    ic("📂 Tiles generated:", os.listdir(tiles_dir)[:10])  # Debug: print first 10
+
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+
+    file_list = []
+    for root, _, files in os.walk(tiles_dir):
+        for file in files:
+            local_path = os.path.join(root, file)
+            rel_path = os.path.relpath(local_path, tiles_dir).replace("\\", "/")
+            remote_path = f"{model_name}/{aoi_name}/today/{rel_path}"
+            file_list.append((local_path, remote_path))
+
+    ic(f"☁️ Found {len(file_list)} tiles to upload")
+
+    def upload_file(local_remote):
+        local_path, remote_path = local_remote
+        blob = bucket.blob(remote_path)
+        blob.cache_control = "no-store"
+        if local_path.endswith(".pbf"):
+            blob.content_type = "application/octet-stream"
+        elif local_path.endswith(".json"):
+            blob.content_type = "application/json"
+
+        blob.upload_from_filename(local_path)
+        blob.patch()  # actually apply metadata
+        return remote_path
+
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = {executor.submit(upload_file, f): f for f in file_list}
+        for i, future in enumerate(as_completed(futures), 1):
+            try:
+                remote_path = future.result()
+                if i % 1000 == 0 or i == len(file_list):
+                    ic(f"[{i}/{len(file_list)}] Uploaded {remote_path}")
+            except Exception as e:
+                ic(f"❌ Error uploading {futures[future][1]}: {e}")
+
+    ic("🎉 All tiles uploaded successfully to GCS!")
