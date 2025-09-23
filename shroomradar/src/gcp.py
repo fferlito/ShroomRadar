@@ -212,7 +212,7 @@ def refresh_timestamps(path_output_geojson: str, model_name: str, aoi_name: str)
         blob.patch()  # actually apply metadata
         return remote_path
 
-    with ThreadPoolExecutor(max_workers=16) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(upload_file, f): f for f in file_list}
         for i, future in enumerate(as_completed(futures), 1):
             try:

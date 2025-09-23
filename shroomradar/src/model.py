@@ -174,7 +174,7 @@ def generarate_predictions(
         os.makedirs(output_dir, exist_ok=True)
         print(f"📁 Created output directory: {output_dir}")
 
-    gdf.to_file(output_geojson, driver="GeoJSON")
+    gdf.to_file(output_geojson, layer="predictions")
     ic("✅ Predictions have been made and saved to", output_geojson)
 
 
@@ -192,5 +192,5 @@ def filter_predictions(path_output_geojson, path_filtered_geojson, threshold=0.0
     ic(f"Number of polygons left: {len(df)}")
 
     # Write the GeoDataFrame with predictions to a new GeoJSON file
-    df.to_file(path_filtered_geojson, driver="GeoJSON")
+    df.to_file(path_filtered_geojson, layer="predictions")
     ic("Predictions have been made and saved to", path_filtered_geojson)
