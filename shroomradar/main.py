@@ -15,22 +15,22 @@ from src.model import generarate_predictions  # pylint: disable=import-error
 from src.gcp import refresh_timestamps
 
 MODELS = {
-    "boletus_aestivalis_eng": os.path.join(
-        "data", "models", "Summer Bolete_XGBClassifier_eng.pkl"
-    ),
-    "boletus_aestivalis_eng_1000": os.path.join(
-        "data", "models", "Summer Bolete_XGBClassifier_eng_1000.pkl"
-    ),
-    "boletus_aestivalis": os.path.join(
-        "data", "models", "Summer Bolete_XGBClassifier.pkl"
-    ),
+    "boletus_edilus": {
+        "path": os.path.join("data", "models", "Boletus_edulis_XGBClassifier_eng_1000.pkl"),
+        "engineered_features": True,
+    },
+    "boletus_aestivalis": {
+        "path": os.path.join(
+            "data", "models", "Summer Bolete_XGBClassifier_eng_1000.pkl"
+        ),
+        "engineered_features": True,
+    }
 }
-
 
 AOIS = {
     "tuscany": {"input_path": "data/base_maps/grid_tuscany_with_topography.geojson"},
     "basque_country": {
-        "input_path": "data/base_maps/grid_basque_country_with_topography.geojson"
+        "input_path": "data/base_maps/basque_country_grid_topography.geojson"
     },
 }
 
@@ -54,7 +54,7 @@ def run_pipeline():
     output_dir = "data/outputs"
     os.makedirs(output_dir, exist_ok=True)
 
-    for model_name, model_path in MODELS.items():
+    for model_name, model_info in MODELS.items():
         for aoi_name, aoi_info in AOIS.items():
             ic(f"Processing {model_name} for {aoi_name}")
 
@@ -80,8 +80,8 @@ def run_pipeline():
             generarate_predictions(
                 path_geojson_with_climate,
                 path_output_geojson,
-                model_path=model_path,
-                use_engineered=True,
+                model_path=model_info["path"],
+                use_engineered=model_info["engineered_features"],
             )
 
             ic("☁️ Uploading to GCP...")

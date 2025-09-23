@@ -257,16 +257,8 @@ wbt = WhiteboxTools()
 wbt.verbose = False
 
 
-def valid_raster(path: str | None) -> bool:
-    """Check if a raster exists, non-empty, and can be opened by rasterio."""
-    if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
-        return False
-    try:
-        with rasterio.open(path) as src:
-            _ = src.count
-        return True
-    except Exception:
-        return False
+def file_exists_and_valid(path: str) -> bool:
+    return os.path.exists(path) and file_exists_and_valid(path)
 
 def run_whitebox(
     tif_file: str,
@@ -310,20 +302,20 @@ def run_whitebox(
     print(f"Aspect out: {aspect_tif}")
     print(f"Geomorph out: {geomorph_tif}")
 
-    if need_slope and not valid_raster(slope_tif):
+    if need_slope and not file_exists_and_valid(slope_tif):
         wbt.slope(dem=tif_file, output=slope_tif, zfactor=1.0, units="degrees")
-    if need_aspect and not valid_raster(aspect_tif):
+    if need_aspect and not file_exists_and_valid(aspect_tif):
         wbt.aspect(dem=tif_file, output=aspect_tif)
-    if need_geomorph and not valid_raster(geomorph_tif):
+    if need_geomorph and not file_exists_and_valid(geomorph_tif):
         wbt.geomorphons(
             dem=tif_file, output=geomorph_tif, search=50, threshold=0.0, forms=True
         )
 
     return (
         tif_file,
-        slope_tif if valid_raster(slope_tif) else None,
-        aspect_tif if valid_raster(aspect_tif) else None,
-        geomorph_tif if valid_raster(geomorph_tif) else None,
+        slope_tif if file_exists_and_valid(slope_tif) else None,
+        aspect_tif if file_exists_and_valid(aspect_tif) else None,
+        geomorph_tif if file_exists_and_valid(geomorph_tif) else None,
     )
 
 
@@ -343,7 +335,7 @@ def extract_value(raster: str | None, lat: float, lon: float) -> float | None:
                       raster's extent, or the value corresponds to the
                       nodata value.
     """
-    if not valid_raster(raster):
+    if not file_exists_and_valid(raster):
         return None
     try:
         with rasterio.open(raster) as src:
@@ -360,54 +352,37 @@ def extract_value(raster: str | None, lat: float, lon: float) -> float | None:
         # or other rasterio errors.
         return None
 
+def valid_raster(path: str | None) -> bool:
+    """Check if a raster exists, non-empty, and can be opened by rasterio."""
+    if not path or not os.path.exists(path) or os.path.getsize(path) == 0:
+        return False
+    try:
+        with rasterio.open(path) as src:
+            _ = src.count
+        return True
+    except Exception:
+        return False
+
+def file_exists_and_valid(path: str) -> bool:
+    return os.path.exists(path) and valid_raster(path)
 
 
-def enrich_csv(
-    input_csv: str,
-    output_csv: str,
+def enrich_geojson(
+    input_geojson: str,
+    output_geojson: str,
     out_dir: str = "dem_tiles",
     download_tiles: bool = True,
     variables: list[str] | None = None,
     verbose: bool = True,
-    lat_col: str = "y",
-    lon_col: str = "x",
 ) -> None:
     """
-    Enriches a CSV file with topographic data derived from Digital Elevation Models (DEMs).
-
-    This function processes a CSV file containing latitude and longitude columns ('y', 'x').
-    For each row, it identifies the required DEM tile, downloads it if necessary,
-    calculates specified topographic variables (DEM, slope, aspect, geomorphons),
-    and appends these values to the corresponding row in a new output CSV.
-
-    It is optimized to minimize downloads and processing by first scanning the entire
-    CSV to determine which unique tiles are needed.
-
-    Args:
-        input_csv (str): Path to the input CSV file. Must contain 'x' (longitude)
-                         and 'y' (latitude) columns.
-        output_csv (str): Path to save the enriched CSV file.
-        out_dir (str, optional): Directory to store downloaded and processed
-                                 raster tiles. Defaults to "dem_tiles".
-        download_tiles (bool, optional): If True, automatically downloads missing
-                                         DEM tiles. If False, only uses existing
-                                         local tiles. Defaults to True.
-        variables (list[str], optional): A list of variables to extract.
-                                         Valid options are 'dem', 'slope',
-                                         'aspect', and 'geomorphons'.
-                                         Defaults to all four.
-        verbose (bool, optional): If True, print progress and informational
-                                  messages to the console. Defaults to True.
-
-    Raises:
-        FileNotFoundError: If the input CSV file does not exist.
-        ValueError: If the CSV is missing 'x' or 'y' columns, or if `variables`
-                    contains invalid options.
+    Enriches a GeoJSON file with topographic data derived from Digital Elevation Models (DEMs).
     """
 
     if variables is None:
         variables = ["dem", "slope", "aspect", "geomorphons"]
 
+    # Logging setup
     if verbose:
         logging.basicConfig(
             level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -419,22 +394,13 @@ def enrich_csv(
 
     os.makedirs(out_dir, exist_ok=True)
 
-    # Create subfolders for different file types
+    # Create subfolders
     dem_dir = os.path.join(out_dir, "dem")
     slope_dir = os.path.join(out_dir, "slope")
     aspect_dir = os.path.join(out_dir, "aspect")
     geomorph_dir = os.path.join(out_dir, "geomorphons")
-
-    os.makedirs(dem_dir, exist_ok=True)
-    os.makedirs(slope_dir, exist_ok=True)
-    os.makedirs(aspect_dir, exist_ok=True)
-    os.makedirs(geomorph_dir, exist_ok=True)
-
-    # Derive individual boolean flags from variables list
-    generate_dem = "dem" in variables
-    generate_slope = "slope" in variables
-    generate_aspect = "aspect" in variables
-    generate_geomorphons = "geomorphons" in variables
+    for d in [dem_dir, slope_dir, aspect_dir, geomorph_dir]:
+        os.makedirs(d, exist_ok=True)
 
     # Validate variables list
     valid_variables = ["dem", "slope", "aspect", "geomorphons"]
@@ -444,158 +410,126 @@ def enrich_csv(
             f"Invalid variables: {invalid_vars}. Valid options are: {valid_variables}"
         )
 
-    # Validate input file
-    if not os.path.exists(input_csv):
-        raise FileNotFoundError(f"Input CSV file not found: {input_csv}")
+    # Load GeoJSON
+    if not os.path.exists(input_geojson):
+        raise FileNotFoundError(f"Input GeoJSON file not found: {input_geojson}")
 
-    logger.info(f"Loading CSV: {input_csv}")
-    df = pd.read_csv(input_csv)
-    df = df[df[lat_col].between(-56, 60)]
+    gdf = gpd.read_file(input_geojson)
 
-    logger.info(f"Loaded {len(df)} rows")
+    # Ensure WGS84
+    if gdf.crs is None:
+        logger.warning("No CRS found, assuming EPSG:4326")
+        gdf.set_crs(epsg=4326, inplace=True)
+    else:
+        gdf = gdf.to_crs(epsg=4326)
 
-    # Validate required columns
-    required_cols = [lon_col, lat_col]
-    missing_cols = [col for col in required_cols if col not in df.columns]
-    if missing_cols:
-        raise ValueError(f"Missing required columns: {missing_cols}")
+    # ✅ Compute centroids safely in a projected CRS
+    gdf_proj = gdf.to_crs(epsg=3857)  # Web Mercator (planar)
+    centroids = gdf_proj.geometry.centroid.to_crs(epsg=4326)
 
-    # Initialize columns based on requested variables
+    # Filter SRTM coverage (-56 to 60 in latitude)
+    gdf = gdf[centroids.y.between(-56, 60)]
+    centroids = centroids[gdf.index]  # align indices
+
+    logger.info(f"Loaded {len(gdf)} features")
+
+    # Initialize columns
     base_cols = []
-    if generate_dem:
+    if "dem" in variables:
         base_cols.extend(["dem", "dem_source"])
-    if generate_slope:
+    if "slope" in variables:
         base_cols.append("slope")
-    if generate_aspect:
+    if "aspect" in variables:
         base_cols.append("aspect")
-    if generate_geomorphons:
+    if "geomorphons" in variables:
         base_cols.extend(["geomorphon", "geomorphon_class"])
 
     for col in base_cols:
-        if col not in df.columns:
-            df[col] = None
+        if col not in gdf.columns:
+            gdf[col] = None
 
-    # Add failure tracking columns for requested variables
+    # Failure columns
     failure_cols = []
-    if generate_dem:
+    if "dem" in variables:
         failure_cols.append("dem_failure")
-    if generate_slope:
+    if "slope" in variables:
         failure_cols.append("slope_failure")
-    if generate_aspect:
+    if "aspect" in variables:
         failure_cols.append("aspect_failure")
-    if generate_geomorphons:
+    if "geomorphons" in variables:
         failure_cols.append("geomorphon_failure")
 
     for col in failure_cols:
-        if col not in df.columns:
-            df[col] = None
+        if col not in gdf.columns:
+            gdf[col] = None
 
-    # Statistics tracking
+    # Stats
     stats = {
-        "total_rows": len(df),
+        "total_features": len(gdf),
         "invalid_coords": 0,
         "missing_tiles": 0,
         "extraction_failures": 0,
     }
-
-    # Add variable-specific stats based on requested variables
-    if generate_dem:
+    if "dem" in variables:
         stats["successful_dem"] = 0
-    if generate_slope:
+    if "slope" in variables:
         stats["successful_slope"] = 0
-    if generate_aspect:
+    if "aspect" in variables:
         stats["successful_aspect"] = 0
-    if generate_geomorphons:
+    if "geomorphons" in variables:
         stats["successful_geomorphon"] = 0
 
     # Step 1: Collect per-tile needs
-    logger.info("Step 1: Scanning CSV for tile requirements...")
+    logger.info("Step 1: Scanning features for tile requirements...")
     tile_needs = {}
-    invalid_coord_rows = []
-
-    for i, row in tqdm(df.iterrows(), total=len(df), desc="Scanning CSV"):
-        lat, lon = row[lat_col], row[lon_col]
-
-        # Check for invalid coordinates
-        if pd.isna(lat) or pd.isna(lon):
-            invalid_coord_rows.append(i)
-            df.at[i, "dem_failure"] = "Invalid coordinates: NaN values"
-            stats["invalid_coords"] += 1
-            continue
-
+    for idx, pt in tqdm(zip(gdf.index, centroids), total=len(gdf), desc="Scanning features"):
+        lat, lon = pt.y, pt.x
         try:
             tid = tile_id_from_coords(lat, lon)
-            if tid is None:
-                invalid_coord_rows.append(i)
-                df.at[i, "dem_failure"] = f"Invalid coordinates: lat={lat}, lon={lon}"
-                stats["invalid_coords"] += 1
-                continue
         except Exception as e:
-            invalid_coord_rows.append(i)
-            df.at[i, "dem_failure"] = f"Coordinate conversion error: {str(e)}"
+            gdf.at[idx, "dem_failure"] = f"Coordinate conversion error: {str(e)}"
+            stats["invalid_coords"] += 1
+            continue
+        if tid is None:
+            gdf.at[idx, "dem_failure"] = f"Invalid coordinates: lat={lat}, lon={lon}"
             stats["invalid_coords"] += 1
             continue
 
-        base = os.path.join(dem_dir, tid)
+        if tid not in tile_needs:
+            tile_needs[tid] = {"dem": False, "slope": False, "aspect": False, "geomorphon": False}
+
+        dem_file = os.path.join(dem_dir, f"{tid}.tif")
         slope_file = os.path.join(slope_dir, f"{tid}_slope.tif")
         aspect_file = os.path.join(aspect_dir, f"{tid}_aspect.tif")
         geomorph_file = os.path.join(geomorph_dir, f"{tid}_geomorph.tif")
 
-        if tid not in tile_needs:
-            tile_needs[tid] = {
-                "dem": False,
-                "slope": False,
-                "aspect": False,
-                "geomorphon": False,
-            }
-
-        if generate_dem and pd.isna(row.get("dem")) and not valid_raster(f"{base}.tif"):
+        if "dem" in variables and pd.isna(gdf.at[idx, "dem"]) and not file_exists_and_valid(dem_file):
             tile_needs[tid]["dem"] = True
-        if (
-            generate_slope
-            and pd.isna(row.get("slope"))
-            and not valid_raster(slope_file)
-        ):
+        if "slope" in variables and pd.isna(gdf.at[idx, "slope"]) and not file_exists_and_valid(slope_file):
             tile_needs[tid]["slope"] = True
-        if (
-            generate_aspect
-            and pd.isna(row.get("aspect"))
-            and not valid_raster(aspect_file)
-        ):
+        if "aspect" in variables and pd.isna(gdf.at[idx, "aspect"]) and not file_exists_and_valid(aspect_file):
             tile_needs[tid]["aspect"] = True
-        if (
-            generate_geomorphons
-            and pd.isna(row.get("geomorphon"))
-            and not valid_raster(geomorph_file)
-        ):
+        if "geomorphons" in variables and pd.isna(gdf.at[idx, "geomorphon"]) and not file_exists_and_valid(geomorph_file):
             tile_needs[tid]["geomorphon"] = True
 
-    tile_needs = {
-        tid: needs for tid, needs in tile_needs.items() if any(needs.values())
-    }
+    tile_needs = {tid: needs for tid, needs in tile_needs.items() if any(needs.values())}
     logger.info(f"Found {len(tile_needs)} tiles that need processing")
 
-    # Step 2: Acquire DEM tiles
+    # Step 2: Acquire DEM tiles (download only for needed tiles)
     logger.info("Step 2: Acquiring DEM tiles...")
     available_dems = {}
-    tile_results = {}
     for tid, needs in tqdm(tile_needs.items(), desc="Acquiring tiles"):
         local_tif = os.path.join(dem_dir, f"{tid}.tif")
-        if valid_raster(local_tif):
+        if file_exists_and_valid(local_tif):
             available_dems[tid] = ([local_tif], "Local")
             continue
-
         if download_tiles:
-            m = re.match(r"([NS])(\d{2})([EW])(\d{3})", tid)
-            if not m:
-                logger.warning(f"Could not parse tile ID: {tid}")
-                continue
             try:
+                m = re.match(r"([NS])(\d{2})([EW])(\d{3})", tid)
                 lat0 = int(m.group(2)) * (1 if m.group(1) == "N" else -1)
                 lon0 = int(m.group(4)) * (1 if m.group(3) == "E" else -1)
-                zip_paths, source = download_dem_point(
-                    lat0 + 0.5, lon0 + 0.5, out_dir=out_dir
-                )
+                # center of the 1x1 tile
+                zip_paths, source = download_dem_point(lat0 + 0.5, lon0 + 0.5, out_dir=out_dir)
                 if zip_paths:
                     tifs = [prepare_tif(zp) for zp in zip_paths]
                     moved_tifs = []
@@ -606,38 +540,23 @@ def enrich_csv(
                         moved_tifs.append(target_path)
                     available_dems[tid] = (moved_tifs, source)
                 else:
-                    logger.warning(f"No DEM data available for tile {tid}")
                     stats["missing_tiles"] += 1
             except Exception as e:
                 logger.error(f"Error downloading tile {tid}: {str(e)}")
                 stats["missing_tiles"] += 1
-        else:
-            logger.debug(f"DEM for tile {tid} not found locally and download is disabled.")
-            stats["missing_tiles"] += 1
 
-    # Step 3: Running Whitebox processing...
+    # Step 3: Run Whitebox (only for tiles that need derived rasters)
     logger.info("Step 3: Running Whitebox processing...")
-
-    # Process both locally found and downloaded tiles
-    all_tiles = available_dems.copy()
-
-
-    # Add local-only tiles (not in downloaded dict)
-    for tid, needs in tile_needs.items():
-        local_tif = os.path.join(dem_dir, f"{tid}.tif")
-        if valid_raster(local_tif) and tid not in all_tiles:
-            all_tiles[tid] = ([local_tif], "Local")
-
-    # Process everything (downloaded + local)
-    for tid, (tifs, source) in tqdm(all_tiles.items(), desc="Running Whitebox"):
+    tile_results = {}
+    for tid, (tifs, source) in tqdm(available_dems.items(), desc="Running Whitebox"):
         needs = tile_needs.get(tid, {})
         for tif in tifs:
             try:
                 tif_path, slope_path, aspect_path, geomorph_path = run_whitebox(
                     tif,
-                    need_slope=generate_slope and needs.get("slope", True),
-                    need_aspect=generate_aspect and needs.get("aspect", True),
-                    need_geomorph=generate_geomorphons and needs.get("geomorphon", True),
+                    need_slope=("slope" in variables) and needs.get("slope", True),
+                    need_aspect=("aspect" in variables) and needs.get("aspect", True),
+                    need_geomorph=("geomorphons" in variables) and needs.get("geomorphon", True),
                     slope_dir=slope_dir,
                     aspect_dir=aspect_dir,
                     geomorph_dir=geomorph_dir,
@@ -654,222 +573,8 @@ def enrich_csv(
                 logger.error(f"Whitebox processing failed for tile {tid}: {str(e)}")
                 continue
 
-
-    # Step 4: Extract values from whatever exists
-    logger.info("Step 4: Extracting values from rasters...")
-    for i, row in tqdm(df.iterrows(), total=len(df), desc="Extracting values"):
-        # Skip rows with invalid coordinates
-        if i in invalid_coord_rows:
-            continue
-
-        lat, lon = row[lat_col], row[lon_col]
-        tid = tile_id_from_coords(lat, lon)
-        if tid is None:
-            continue
-
-        dem_base = os.path.join(dem_dir, tid)
-        slope_base = os.path.join(slope_dir, f"{tid}_slope.tif")
-        aspect_base = os.path.join(aspect_dir, f"{tid}_aspect.tif")
-        geomorph_base = os.path.join(geomorph_dir, f"{tid}_geomorph.tif")
-
-        tr = tile_results.get(
-            tid,
-            {
-                "tif": f"{dem_base}.tif" if valid_raster(f"{dem_base}.tif") else None,
-                "slope": slope_base if valid_raster(slope_base) else None,
-                "aspect": aspect_base if valid_raster(aspect_base) else None,
-                "geomorphon": geomorph_base if valid_raster(geomorph_base) else None,
-                "source": "Local",
-            },
-        )
-
-        # Extract DEM value
-        if generate_dem and pd.isna(row.get("dem")) and tr["tif"]:
-            try:
-                dem_value = extract_value(tr["tif"], lat, lon)
-                if dem_value is not None:
-                    df.at[i, "dem"] = dem_value
-                    df.at[i, "dem_source"] = tr["source"]
-                    stats["successful_dem"] += 1
-                else:
-                    df.at[i, "dem_failure"] = "No data value or out of bounds"
-            except Exception as e:
-                df.at[i, "dem_failure"] = f"Extraction error: {str(e)}"
-                stats["extraction_failures"] += 1
-        elif generate_dem and pd.isna(row.get("dem")):
-            df.at[i, "dem_failure"] = "No DEM raster available"
-
-        # Extract slope value
-        if generate_slope and pd.isna(row.get("slope")) and tr["slope"]:
-            try:
-                slope_value = extract_value(tr["slope"], lat, lon)
-                if slope_value is not None:
-                    df.at[i, "slope"] = slope_value
-                    stats["successful_slope"] += 1
-                else:
-                    df.at[i, "slope_failure"] = "No data value or out of bounds"
-            except Exception as e:
-                df.at[i, "slope_failure"] = f"Extraction error: {str(e)}"
-                stats["extraction_failures"] += 1
-        elif generate_slope and pd.isna(row.get("slope")):
-            df.at[i, "slope_failure"] = "No slope raster available"
-
-        # Extract aspect value
-        if generate_aspect and pd.isna(row.get("aspect")) and tr["aspect"]:
-            try:
-                aspect_value = extract_value(tr["aspect"], lat, lon)
-                if aspect_value is not None:
-                    df.at[i, "aspect"] = aspect_value
-                    stats["successful_aspect"] += 1
-                else:
-                    df.at[i, "aspect_failure"] = "No data value or out of bounds"
-            except Exception as e:
-                df.at[i, "aspect_failure"] = f"Extraction error: {str(e)}"
-                stats["extraction_failures"] += 1
-        elif generate_aspect and pd.isna(row.get("aspect")):
-            df.at[i, "aspect_failure"] = "No aspect raster available"
-
-        # Extract geomorphon value
-        if generate_geomorphons and pd.isna(row.get("geomorphon")) and tr["geomorphon"]:
-            try:
-                geomorph_value = extract_value(tr["geomorphon"], lat, lon)
-                if geomorph_value is not None:
-                    df.at[i, "geomorphon"] = geomorph_value
-                    stats["successful_geomorphon"] += 1
-                else:
-                    df.at[i, "geomorphon_failure"] = "No data value or out of bounds"
-            except Exception as e:
-                df.at[i, "geomorphon_failure"] = f"Extraction error: {str(e)}"
-                stats["extraction_failures"] += 1
-        elif generate_geomorphons and pd.isna(row.get("geomorphon")):
-            df.at[i, "geomorphon_failure"] = "No geomorphon raster available"
-
-    # Step 5: Decode geomorphons (only if geomorphons were generated)
-    if generate_geomorphons:
-        logger.info("Step 5: Decoding geomorphon classes...")
-        geomorph_classes = {
-            1: "flat",
-            2: "summit",
-            3: "ridge",
-            4: "shoulder",
-            5: "spur",
-            6: "slope",
-            7: "hollow",
-            8: "footslope",
-            9: "valley",
-            10: "pit",
-        }
-        df["geomorphon_class"] = df["geomorphon"].map(geomorph_classes)
-
-    # Save results
-    df.to_csv(output_csv, index=False)
-
-    return
-
-
-def enrich_geojson(
-    input_geojson: str,
-    output_geojson: str,
-    out_dir: str = "dem_tiles",
-    download_tiles: bool = True,
-) -> None:
-    """
-    Enriches a GeoJSON file with topographic data derived from DEMs.
-
-    This function processes a GeoJSON file, calculating the centroid for each feature.
-    For each centroid, it identifies the required DEM tile, downloads it if necessary,
-    calculates topographic variables (DEM, slope, aspect, geomorphons), and
-    appends these values as properties to the corresponding feature in a new
-    output GeoJSON file.
-
-    Args:
-        input_geojson (str): Path to the input GeoJSON file.
-        output_geojson (str): Path to save the enriched GeoJSON file.
-        out_dir (str, optional): Directory to store downloaded and processed
-                                 raster tiles. Defaults to "dem_tiles".
-        download_tiles (bool, optional): If True, automatically downloads missing
-                                         DEM tiles. If False, only uses existing
-                                         local tiles. Defaults to True.
-    """
-    os.makedirs(out_dir, exist_ok=True)
-
-    # Create subfolders
-    dem_dir = os.path.join(out_dir, "dem")
-    slope_dir = os.path.join(out_dir, "slope")
-    aspect_dir = os.path.join(out_dir, "aspect")
-    geomorph_dir = os.path.join(out_dir, "geomorphons")
-    for d in [dem_dir, slope_dir, aspect_dir, geomorph_dir]:
-        os.makedirs(d, exist_ok=True)
-
-    gdf = gpd.read_file(input_geojson)
-
-    # Ensure WGS84
-    if gdf.crs is None:
-        print("⚠️ No CRS found, assuming EPSG:4326")
-        gdf.set_crs(epsg=4326, inplace=True)
-    else:
-        gdf = gdf.to_crs(epsg=4326)
-
-    # Filter SRTM coverage (lat -56 to 60)
-    gdf = gdf[gdf.geometry.centroid.y.between(-56, 60)]
-
-    # Add expected cols
-    for col in [
-        "dem",
-        "slope",
-        "aspect",
-        "geomorphon",
-        "dem_source",
-        "geomorphon_class",
-    ]:
-        if col not in gdf.columns:
-            gdf[col] = None
-
-    # Collect centroids
-    centroids = gdf.geometry.centroid
-    coords = [(pt.y, pt.x) for pt in centroids]
-
-    # Step 1: collect tiles
-    needed_tiles = {}
-    for lat, lon in tqdm(coords, desc="Collecting tiles"):
-        tid = tile_id_from_coords(lat, lon)
-        if tid and tid not in needed_tiles:
-            needed_tiles[tid] = (lat, lon)
-
-    # Step 2: download & prepare tiles
-    downloaded = {}
-    for tid, (lat, lon) in tqdm(needed_tiles.items(), desc="Preparing tiles"):
-        tif_path = os.path.join(dem_dir, f"{tid}.tif")
-        if valid_raster(tif_path):
-            downloaded[tid] = ([tif_path], "Local")
-        elif download_tiles:
-            zip_paths, source = download_dem_point(lat, lon, out_dir=out_dir)
-            if zip_paths:
-                tifs = [prepare_tif(zp) for zp in zip_paths]
-                moved_tifs = []
-                for tif in tifs:
-                    target = os.path.join(dem_dir, f"{tid}.tif")
-                    if tif != target:
-                        shutil.move(tif, target)
-                    moved_tifs.append(target)
-                downloaded[tid] = (moved_tifs, source)
-
-    # Step 3: run Whitebox
-    tile_results = {}
-    for tid, (tifs, source) in tqdm(downloaded.items(), desc="Running Whitebox"):
-        for tif in tifs:
-            tif_path, slope_tif, aspect_tif, geomorph_tif = run_whitebox(
-                tif,
-                need_slope=True,
-                need_aspect=True,
-                need_geomorph=True,
-                slope_dir=slope_dir,
-                aspect_dir=aspect_dir,
-                geomorph_dir=geomorph_dir,
-            )
-            tile_results[tid] = (tif_path, slope_tif, aspect_tif, geomorph_tif, source)
-
-    # Step 4: extract values
+    # Step 4: Extract values (✅ includes local fallback even if no tiles were processed)
+    logger.info("Step 4: Extracting values...")
     geomorph_classes = {
         1: "flat",
         2: "summit",
@@ -883,20 +588,92 @@ def enrich_geojson(
         10: "pit",
     }
 
-    for idx, (lat, lon) in enumerate(tqdm(coords, desc="Extracting values")):
+    for idx, pt in tqdm(zip(gdf.index, centroids), total=len(gdf), desc="Extracting values"):
+        lat, lon = pt.y, pt.x
         tid = tile_id_from_coords(lat, lon)
-        if tid is None or tid not in tile_results:
+        if tid is None:
             continue
-        tif, slope_tif, aspect_tif, geomorph_tif, source = tile_results[tid]
-        gdf.at[idx, "dem"] = extract_value(tif, lat, lon)
-        gdf.at[idx, "dem_source"] = source
-        gdf.at[idx, "slope"] = extract_value(slope_tif, lat, lon)
-        gdf.at[idx, "aspect"] = extract_value(aspect_tif, lat, lon)
-        gdf.at[idx, "geomorphon"] = extract_value(geomorph_tif, lat, lon)
-        gdf.at[idx, "geomorphon_class"] = geomorph_classes.get(
-            gdf.at[idx, "geomorphon"], None
+
+        # Local fallback paths (so extraction works even if tile_needs == {}):
+        dem_base = os.path.join(dem_dir, f"{tid}.tif")
+        slope_base = os.path.join(slope_dir, f"{tid}_slope.tif")
+        aspect_base = os.path.join(aspect_dir, f"{tid}_aspect.tif")
+        geomorph_base = os.path.join(geomorph_dir, f"{tid}_geomorph.tif")
+
+        tr = tile_results.get(
+            tid,
+            {
+                "tif": dem_base if file_exists_and_valid(dem_base) else None,
+                "slope": slope_base if file_exists_and_valid(slope_base) else None,
+                "aspect": aspect_base if file_exists_and_valid(aspect_base) else None,
+                "geomorphon": geomorph_base if file_exists_and_valid(geomorph_base) else None,
+                "source": "Local",
+            },
         )
+
+        # DEM
+        if "dem" in variables and pd.isna(gdf.at[idx, "dem"]) and tr.get("tif"):
+            try:
+                dem_value = extract_value(tr["tif"], lat, lon)
+                if dem_value is not None:
+                    gdf.at[idx, "dem"] = dem_value
+                    gdf.at[idx, "dem_source"] = tr["source"]
+                    stats["successful_dem"] += 1
+                else:
+                    gdf.at[idx, "dem_failure"] = "No data value or out of bounds"
+            except Exception as e:
+                gdf.at[idx, "dem_failure"] = f"Extraction error: {str(e)}"
+                stats["extraction_failures"] += 1
+        elif "dem" in variables and pd.isna(gdf.at[idx, "dem"]) and not tr.get("tif"):
+            gdf.at[idx, "dem_failure"] = "No DEM raster available"
+
+        # Slope
+        if "slope" in variables and pd.isna(gdf.at[idx, "slope"]) and tr.get("slope"):
+            try:
+                slope_value = extract_value(tr["slope"], lat, lon)
+                if slope_value is not None:
+                    gdf.at[idx, "slope"] = slope_value
+                    stats["successful_slope"] += 1
+                else:
+                    gdf.at[idx, "slope_failure"] = "No data value or out of bounds"
+            except Exception as e:
+                gdf.at[idx, "slope_failure"] = f"Extraction error: {str(e)}"
+                stats["extraction_failures"] += 1
+        elif "slope" in variables and pd.isna(gdf.at[idx, "slope"]):
+            gdf.at[idx, "slope_failure"] = "No slope raster available"
+
+        # Aspect
+        if "aspect" in variables and pd.isna(gdf.at[idx, "aspect"]) and tr.get("aspect"):
+            try:
+                aspect_value = extract_value(tr["aspect"], lat, lon)
+                if aspect_value is not None:
+                    gdf.at[idx, "aspect"] = aspect_value
+                    stats["successful_aspect"] += 1
+                else:
+                    gdf.at[idx, "aspect_failure"] = "No data value or out of bounds"
+            except Exception as e:
+                gdf.at[idx, "aspect_failure"] = f"Extraction error: {str(e)}"
+                stats["extraction_failures"] += 1
+        elif "aspect" in variables and pd.isna(gdf.at[idx, "aspect"]):
+            gdf.at[idx, "aspect_failure"] = "No aspect raster available"
+
+        # Geomorphon
+        if "geomorphons" in variables and pd.isna(gdf.at[idx, "geomorphon"]) and tr.get("geomorphon"):
+            try:
+                geomorph_value = extract_value(tr["geomorphon"], lat, lon)
+                if geomorph_value is not None:
+                    gdf.at[idx, "geomorphon"] = geomorph_value
+                    gdf.at[idx, "geomorphon_class"] = geomorph_classes.get(geomorph_value, None)
+                    stats["successful_geomorphon"] += 1
+                else:
+                    gdf.at[idx, "geomorphon_failure"] = "No data value or out of bounds"
+            except Exception as e:
+                gdf.at[idx, "geomorphon_failure"] = f"Extraction error: {str(e)}"
+                stats["extraction_failures"] += 1
+        elif "geomorphons" in variables and pd.isna(gdf.at[idx, "geomorphon"]):
+            gdf.at[idx, "geomorphon_failure"] = "No geomorphon raster available"
 
     # Save enriched GeoJSON
     gdf.to_file(output_geojson, driver="GeoJSON")
-    print(f"✅ Done! Saved {output_geojson}")
+    logger.info(f"✅ Done! Saved {output_geojson}")
+    logger.info(f"Stats: {stats}")
